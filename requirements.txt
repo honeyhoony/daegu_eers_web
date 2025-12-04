@@ -9,4 +9,6 @@ lxml
 openpyxl
 certifi
 urllib3
+extra-streamlit-components
+
 
