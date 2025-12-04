@@ -1,0 +1,15 @@
+streamlit
+streamlit-aggrid
+PyQt6
+qdarkstyle
+pandas
+numpy
+requests
+SQLAlchemy>=2.0
+typing-extensions
+lxml
+openpyxl
+certifi
+urllib3
+pywin32-ctypes
+pywin32
