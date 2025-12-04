@@ -1,7 +1,5 @@
 streamlit
 streamlit-aggrid
-PyQt6
-qdarkstyle
 pandas
 numpy
 requests
@@ -11,5 +9,4 @@ lxml
 openpyxl
 certifi
 urllib3
-pywin32-ctypes
-pywin32
+
