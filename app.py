@@ -428,7 +428,8 @@ try:
     )
     from mailer import send_mail, build_subject, build_body_html, build_attachment_html
 except ImportError as e:
-    st.error(f"필수 모듈 로드 오류: {e}. 'database', 'collect_data', 'mailer', 'config' 파일이 존재하는지 확인하세요.")
+    st.error(f"필수 모듈 로드 오류: {e}. 'database', 'collect_data', 'mailer' 파일이 존재하는지 확인하세요.")
+
     st.stop()
 
 
