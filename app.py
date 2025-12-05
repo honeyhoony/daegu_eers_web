@@ -2571,40 +2571,56 @@ def mail_manage_page():
             )
         return data
 
-    def save_rows_by_office_to_db(df_editor) -> None:
-        session = get_db_session()
-        try:
-            # (기존 DB 삭제 및 새 데이터 추가 로직은 동일)
-            session.query(MailRecipient).delete()
-            session.flush()
-            for _, row in df_editor.iterrows():
-                # ... 데이터 처리 및 추가 로직 ...
-                local = row["이메일 ID"].strip()
-                dom = row["도메인"].strip().lstrip("@")
-                email = f"{local}@{dom}" if local and dom else ""
-                if (
-                    email
-                    and row["사업소명"] in OFFICES
-                    and row["사업소명"] != "전체"
-                ):
-                    session.add(
-                        MailRecipient(
-                            office=row["사업소명"],
-                            email=email.lower(),
-                            name=row["담당자명"] or "",
-                            is_active=bool(row["선택"]),
-                        )
-                    )
-            session.commit()
-            st.success("메일 수신자 주소록이 저장되었습니다.")
-            # ⭐️ 캐시 데코레이터를 삭제했으므로 .clear() 호출도 삭제합니다.
+def save_rows_by_office_to_db(df_editor) -> None:
+    session = get_db_session()
+    try:
+        session.query(MailRecipient).delete()
+        session.flush()
+        
+        for _, row in df_editor.iterrows():
+            # 🔥 [수정 시작]
+            # 값이 리스트일 경우 첫 번째 요소만 사용하도록 처리
+            raw_local = row["이메일 ID"]
+            raw_dom = row["도메인"]
             
-            st.rerun()
+            if isinstance(raw_local, list):
+                local = str(raw_local[0]).strip()
+            else:
+                local = str(raw_local).strip()
+                
+            if isinstance(raw_dom, list):
+                dom = str(raw_dom[0]).strip().lstrip("@")
+            else:
+                dom = str(raw_dom).strip().lstrip("@")
+            
+            # 🔥 [수정 끝]
+            
+            email = f"{local}@{dom}" if local and dom else ""
+            
+            if (
+                email
+                and row["사업소명"] in OFFICES
+                and row["사업소명"] != "전체"
+            ):
+                session.add(
+                    MailRecipient(
+                        office=row["사업소명"],
+                        email=email.lower(),
+                        name=row["담당자명"] or "",
+                        is_active=bool(row["선택"]),
+                    )
+                )
+        
+        session.commit()
+        st.success("메일 수신자 주소록이 저장되었습니다.")
+        st.rerun()
 
-        except Exception as e:
-            st.error(f"주소록 저장 중 오류 발생: {e}")
-            session.rollback()
+    except Exception as e:
+        st.error(f"주소록 저장 중 오류 발생: {e}")
+        session.rollback()
 
+
+        
     all_office_list = [o for o in OFFICES if o != "전체"]
     st.markdown("---")
 
