@@ -204,179 +204,119 @@ def send_verification_email(to_email, code):
 
 
 def login_screen():
-    """로그인 화면 UI 및 로직"""
+
     # ---------------------------------------------------------
-    # [1] 로그인 여부 체크 (쿠키 OR 세션)
+    # [0] 필수 초기화 (버그 원인 1 해결)
     # ---------------------------------------------------------
-    cookie_manager = st.session_state.get("cookie_manager_instance") 
-    if not cookie_manager:
-        # Fallback/Error state if initialization in eers_app failed (shouldn't happen)
-        return False
-        
-    # 1. 쿠키 확인 (재접속 시 6개월 유지용)
-    auth_cookie = cookie_manager.get(cookie="eers_auth_token")
-    
-    # 2. 세션 확인 (방금 로그인 성공 시 즉시 통과용)
+    if "cookie_manager_instance" not in st.session_state:
+        st.session_state["cookie_manager_instance"] = stx.CookieManager()
+    if "generated_code" not in st.session_state:
+        st.session_state["generated_code"] = None
+    if "code_timestamp" not in st.session_state:
+        st.session_state["code_timestamp"] = None
+
+    cookie_manager = st.session_state["cookie_manager_instance"]
+
+    # ---------------------------------------------------------
+    # [1] 쿠키 로그인 처리
+    # ---------------------------------------------------------
+    auth_cookie = cookie_manager.get("eers_auth_token")
     logged_in_session = st.session_state.get("logged_in_success", False)
-    
-    # [수정] 쿠키가 있거나, 현재 세션에서 방금 로그인이 성공했다면 True 반환
+
     if auth_cookie or logged_in_session:
-        # 6개월 쿠키를 통해 접속했을 경우, 세션 상태를 True로 확실히 설정
         if auth_cookie and not logged_in_session:
             st.session_state["logged_in_success"] = True
-            st.session_state["target_email"] = auth_cookie # 쿠키에서 이메일 정보 복원
-        
-        # 🔥 이 시점에서 메인 앱으로 즉시 진입하도록 리턴
-        return True # <--- 이 부분은 그대로 두세요.
+            st.session_state["target_email"] = auth_cookie
+        return True
 
+    # ---------------------------------------------------------
+    # [2] 로그인 UI
+    # ---------------------------------------------------------
     st.title("🔒 EERS 시스템 로그인")
 
     if "auth_stage" not in st.session_state:
         st.session_state["auth_stage"] = "input_email"
 
     # ---------------------------------------------------------
-    # [단계 1] 이메일 입력 화면
+    # 단계 1: 이메일 입력
     # ---------------------------------------------------------
     if st.session_state["auth_stage"] == "input_email":
-        st.info("사내 메일(@kepco.co.kr)로 인증 코드를 발송하여 로그인합니다.")
+        st.info("사내 메일(@kepco.co.kr)로 인증 코드를 발송합니다.")
 
-        # 이메일을 ID 부분만 입력
         col1, col2 = st.columns([3, 2])
-
         with col1:
-            email_id = st.text_input(
-                "이메일 ID",
-                placeholder="이메일 ID 입력",
-                key="email_id_input"
-            )
-
+            email_id = st.text_input("이메일 ID", key="email_id_input")
         with col2:
             st.text_input("도메인", value="@kepco.co.kr", disabled=True)
 
-        if email_id:
-            email_input = f"{email_id}@kepco.co.kr"
-        else:
-            email_input = ""
+        full_email = f"{email_id}@kepco.co.kr" if email_id else ""
 
         if st.button("인증코드 발송", type="primary"):
             if not email_id:
-                st.error("❌ 이메일 ID를 입력해주세요.")
+                st.error("❌ 이메일을 입력하세요.")
             else:
-                full_email = email_input  # 최종 이메일 주소
                 code = "".join(random.choices(string.digits, k=6))
-                print(f"\n======== [DEBUG] 생성된 인증코드: {code} ========\n")
+                print("DEBUG code:", code)
 
-                # 🔥 여기에 타임스탬프를 먼저 저장합니다. (현재 코드와 동일)
                 st.session_state["generated_code"] = code
                 st.session_state["target_email"] = full_email
-                st.session_state["code_timestamp"] = datetime.now() # <--- 이 줄이 핵심입니다.
-                
-                with st.spinner("인증코드를 발송 중입니다..."):
+                st.session_state["code_timestamp"] = datetime.now()
+
+                with st.spinner("메일 발송 중..."):
                     if send_verification_email(full_email, code):
-                        # st.session_state["generated_code"] = code # <--- 이 줄은 위로 이동
-                        # st.session_state["target_email"] = full_email # <--- 이 줄은 위로 이동
-                        # st.session_state["code_timestamp"] = datetime.now() # <--- 이 줄은 위로 이동
+                        st.toast("📧 인증코드 발송 완료!")
                         st.session_state["auth_stage"] = "verify_code"
-                        st.toast(f"📧 {full_email} 로 인증코드를 보냈습니다!", icon="✅")
                         st.rerun()
                     else:
-                        st.error("메일 발송 실패. (DEBUG 모드라면 터미널 확인)")
+                        st.error("메일 발송 실패!")
+
+        return False
 
     # ---------------------------------------------------------
-    # [단계 2] 인증코드 입력 화면 (타이머 포함)
+    # 단계 2: 인증코드 입력
     # ---------------------------------------------------------
-    elif st.session_state["auth_stage"] == "verify_code":
-        
-        # 1. 남은 시간 계산
-        if "code_timestamp" not in st.session_state:
-            st.session_state["code_timestamp"] = datetime.now()
-            
-        time_limit = timedelta(minutes=5) # 5분 제한
+    if st.session_state["auth_stage"] == "verify_code":
+
+        # 타이머 계산
+        time_limit = timedelta(minutes=5)
         elapsed = datetime.now() - st.session_state["code_timestamp"]
-        remaining_seconds = max(0, time_limit.total_seconds() - elapsed.total_seconds())
+        remaining = max(0, int(time_limit.total_seconds() - elapsed.total_seconds()))
 
-        # 2. [신규] 실시간 카운트다운 타이머 (JS 주입)
-        timer_html = f"""
-        <div id="countdown" style="
-            font-size: 20px; 
-            font-weight: bold; 
-            color: #E53935; 
-            margin-bottom: 10px;
-            padding: 10px;
-            background-color: #FFEBEE;
-            border-radius: 8px;
-            text-align: center;
-            border: 1px solid #FFCDD2;
-        ">
-            계산 중...
-        </div>
-        <script>
-            var timeLeft = {int(remaining_seconds)};
-            var elem = document.getElementById('countdown');
-            
-            var timerId = setInterval(function() {{
-                if (timeLeft <= 0) {{
-                    clearInterval(timerId);
-                    elem.innerHTML = "⏰ 인증 시간이 만료되었습니다.";
-                    elem.style.color = "#9E9E9E";
-                    elem.style.backgroundColor = "#F5F5F5";
-                    elem.style.borderColor = "#E0E0E0";
-                }} else {{
-                    var minutes = Math.floor(timeLeft / 60);
-                    var seconds = timeLeft % 60;
-                    var timeStr = minutes.toString().padStart(2, '0') + ":" + seconds.toString().padStart(2, '0');
-                    elem.innerHTML = "⏳ 남은 시간: " + timeStr;
-                    timeLeft--;
-                }}
-            }}, 1000);
-        </script>
-        """
-        # 타이머 표시 (높이 확보)
-        st.components.v1.html(timer_html, height=70)
-
-        st.info(f"📩 {st.session_state['target_email']}로 발송된 코드를 입력하세요.")
+        st.info(f"📩 발송된 인증코드를 입력하세요.")
+        st.write(f"⏳ 남은 시간: **{remaining}초**")
 
         code_input = st.text_input("인증코드 6자리", max_chars=6)
-        
+
         col_login, col_back = st.columns([1, 1])
-        
+
         with col_login:
             if st.button("로그인", type="primary"):
-                # 시간 초과 체크 (서버단 검증)
                 if elapsed > time_limit:
-                    st.error("⏰ 인증 시간이 만료되었습니다. '이메일 다시 입력'을 눌러 재발송해주세요.")
-                    return # 👈 **[수정]** 여기서 함수 실행을 즉시 중단합니다.
-                
-                # 코드 일치 여부 확인
-                elif code_input == st.session_state["generated_code"]:
+                    st.error("⏰ 인증 시간이 만료되었습니다.")
+                    st.session_state["auth_stage"] = "input_email"
+                    st.rerun()
 
-                    # 🔥 로그인 성공 처리 (단 하나만 사용)
+                if code_input == st.session_state["generated_code"]:
                     st.session_state["logged_in_success"] = True
-                    st.session_state["target_email"] = st.session_state["target_email"]
 
-                    # 선택: 쿠키 저장 (기억하기 기능)
                     expire_date = datetime.now() + timedelta(days=180)
-                    cookie_manager = st.session_state.get("cookie_manager_instance")
-                    if cookie_manager:
-                        cookie_manager.set(
-                            "eers_auth_token",
-                            st.session_state["target_email"],
-                            expires_at=expire_date
-                        )
+                    cookie_manager.set(
+                        "eers_auth_token",
+                        st.session_state["target_email"],
+                        expires_at=expire_date
+                    )
 
-                    st.toast("👋 로그인 성공! 환영합니다.", icon="✅")
+                    st.toast("로그인 성공!", icon="✅")
                     st.rerun()
                 else:
                     st.error("❌ 인증코드가 일치하지 않습니다.")
-                    st.rerun()
-        
+
         with col_back:
             if st.button("이메일 다시 입력"):
                 st.session_state["auth_stage"] = "input_email"
                 st.rerun()
 
-    return False
-
+        return False
 
 
 # =========================================================
