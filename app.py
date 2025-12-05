@@ -244,23 +244,12 @@ def login_screen():
         with col1:
             email_id = st.text_input(
                 "이메일 ID",
-                placeholder="이메일 ID",
+                placeholder="이메일 ID 입력",
                 key="email_id_input"
             )
 
         with col2:
-            # -----------------------------------------------------------------
-            # 🔥 수정된 부분: st.text_input(disabled=True) 대신 HTML로 볼드 처리
-            # -----------------------------------------------------------------
-            st.markdown(
-                """
-                <div style="height: 38px; display: flex; align-items: center; padding-top: 0.5rem;">
-                    <strong>@kepco.co.kr</strong>
-                </div>
-                """, 
-                unsafe_allow_html=True
-            )
-            # -----------------------------------------------------------------
+            st.text_input("도메인", value="@kepco.co.kr", disabled=True)
 
         if email_id:
             email_input = f"{email_id}@kepco.co.kr"
