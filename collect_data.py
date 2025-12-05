@@ -9,7 +9,6 @@ import re
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-import config
 from database import Base, Notice, engine  # noqa
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -27,6 +26,44 @@ except ImportError:
     HAS_BJD_MAPPER = False
 import re
 from difflib import SequenceMatcher
+
+# -------------------------------------------------------
+# CONFIG LOADER (로컬 config.py + Streamlit secrets 자동 지원)
+# -------------------------------------------------------
+
+# 1) Streamlit import 시도
+try:
+    import streamlit as st
+    HAS_ST = True
+except:
+    HAS_ST = False
+    class _DummySecrets(dict):
+        def get(self, key, default=None):
+            return default
+    st = type("dummy", (), {"secrets": _DummySecrets()})
+
+# 2) 로컬 config.py import 시도
+try:
+    import config as _local_config
+    HAS_LOCAL_CONFIG = True
+except:
+    _local_config = None
+    HAS_LOCAL_CONFIG = False
+
+
+# 3) 최종 config getter
+def _cfg(key: str, default=None):
+    # 로컬 개발환경 우선
+    if HAS_LOCAL_CONFIG and hasattr(_local_config, key):
+        return getattr(_local_config, key)
+
+    # Streamlit Cloud – secrets.toml 우선
+    if HAS_ST:
+        return st.secrets.get(key, default)
+
+    # 둘 다 없으면 default
+    return default
+
 
 def normalize_model_for_compare(m: str) -> str:
     """불필요 기호 제거하고 소문자 정규화"""
@@ -988,7 +1025,7 @@ def kea_has_model(model: str) -> bool | None:
         return None
 
     params = {
-        "serviceKey": config.KEA_SERVICE_KEY, # config.py에 KEA_SERVICE_KEY가 있어야 합니다.
+        "serviceKey":_cfg("KEA_SERVICE_KEY"), # config.py에 KEA_SERVICE_KEY가 있어야 합니다.
         "pageNo": 1,
         "numOfRows": 10,
         "apiType": "json",
@@ -1040,7 +1077,7 @@ def kea_cert_with_similarity(model: str) -> str:
 
     try:
         params = {
-            "serviceKey": config.KEA_SERVICE_KEY,
+            "serviceKey": _cfg("KEA_SERVICE_KEY"),
             "pageNo": 1,
             "numOfRows": 50,
             "apiType": "json",
@@ -1437,7 +1474,7 @@ def get_full_address_from_usr_info(dminstt_code: str) -> Optional[str]:
     inqryEndDt = end.strftime("%Y%m%d") + "2359"
 
     params = {
-        "ServiceKey": config.NARA_SERVICE_KEY,
+        "ServiceKey": _cfg("NARA_SERVICE_KEY"),
         "type": "json",
         "inqryDiv": "2",                 # ✅ 변경: 기간(변경일) 기준
         "inqryBgnDt": inqryBgnDt,        # ✅ 12개월 범위 시작
@@ -1873,7 +1910,7 @@ def expand_and_store_with_priority(
         inqryEndDt = end.strftime("%Y%m%d") + "2359"
 
         params = {
-            "ServiceKey": config.NARA_SERVICE_KEY,
+            "ServiceKey": _cfg("NARA_SERVICE_KEY"),
             "type": "json",
             "inqryDiv": "2",                 # 변경일 기준
             "inqryBgnDt": inqryBgnDt,
@@ -2023,7 +2060,7 @@ def fetch_kapt_basic_info(
         return None
 
     params = {
-        "serviceKey": config.KAPT_SERVICE_KEY,
+        "serviceKey": _cfg("KAPT_SERVICE_KEY"),
         "kaptCode": kapt_code,
         "_type": "json",
     }
@@ -2144,7 +2181,7 @@ def fetch_kapt_maintenance_history(kapt_code: str) -> list[dict]:
     """
     url = api_url(KAPT_MAINTENANCE_PATH)
     params = {
-        "serviceKey": config.KAPT_SERVICE_KEY,
+        "serviceKey": _cfg("KAPT_SERVICE_KEY"),
         "pageNo": "1",
         "numOfRows": "100",
         "kaptCode": (kapt_code or "").strip(),
@@ -2172,7 +2209,7 @@ def fetch_and_process_kapt_bids(search_ymd: str):
 
     try:
         params_first = {
-            "serviceKey": config.KAPT_SERVICE_KEY, "pageNo": "1", "numOfRows": "1",
+            "serviceKey": _cfg("KAPT_SERVICE_KEY"), "pageNo": "1", "numOfRows": "1",
             "startDate": search_ymd, "endDate": search_ymd, "_type": "json"
         }
         first = http_get_json(api_url(KAPT_BID_LIST_PATH), params_first)
@@ -2188,7 +2225,7 @@ def fetch_and_process_kapt_bids(search_ymd: str):
     print(f"- 총 {total}건")
 
     params_list = [{
-        "serviceKey": config.KAPT_SERVICE_KEY, "pageNo": str(p), "numOfRows": str(page_size),
+        "serviceKey": _cfg("KAPT_SERVICE_KEY"), "pageNo": str(p), "numOfRows": str(page_size),
         "startDate": search_ymd, "endDate": search_ymd, "_type": "json"
     } for p in range(1, total_pages + 1)]
 
@@ -2392,7 +2429,8 @@ def _load_apt_map():
     if _APT_MAP is not None:
         return _APT_MAP
 
-    path = getattr(config, "KAPT_APT_LIST_PATH", None)
+    path = _cfg("KAPT_APT_LIST_PATH")
+
     if not path:
         # 흔한 위치 후보들
         for cand in [
@@ -2466,7 +2504,7 @@ def fetch_and_process_kapt_bid_results(search_ymd: str):
       - 사용자 표시 로그: 나라장터 톤(총 N건 / Pp, 일괄 저장 N건 / 데이터 없음)
     """
     print(f"\n--- [{to_ymd(search_ymd)}] 공동주택(K-APT) 입찰결과 수집 ---")
-    svc_key = getattr(config, "KAPT_SERVICE_KEY_DECODING", None) or config.KAPT_SERVICE_KEY
+    svc_key = getattr(_local_config, "KAPT_SERVICE_KEY_DECODING", None) or _cfg("KAPT_SERVICE_KEY")
 
     def _first_page(url_path, tag):
         try:
@@ -2672,7 +2710,10 @@ def fetch_and_process_kapt_bid_results(search_ymd: str):
 
 
 def _collect_by_state_year(bid_state: str, year: str):
-    svc_key = getattr(config, "KAPT_SERVICE_KEY_DECODING", None) or config.KAPT_SERVICE_KEY
+    svc_key = (
+        getattr(_local_config, "KAPT_SERVICE_KEY_DECODING", None)
+        if _local_config else None
+    ) or _cfg("KAPT_SERVICE_KEY")
 
     first = http_get_json(api_url(PATH_STTS), {   # <-- 여기
         "serviceKey": svc_key,
@@ -2739,7 +2780,7 @@ def fetch_and_process_kapt_private_contracts(search_ymd: str):
 
     print(f"\n--- [K-APT 수의계약] 조회기간: {startDate} ~ {endDate} ---")
 
-    svc_key = getattr(config, "KAPT_SERVICE_KEY_DECODING", None) or config.KAPT_SERVICE_KEY
+    svc_key = getattr(_local_config, "KAPT_SERVICE_KEY_DECODING", None) or _cfg("KAPT_SERVICE_KEY")
     PAGE = PAGE_SIZE
 
     # yyyymmdd -> yyyy-mm-dd
@@ -2880,7 +2921,7 @@ def fetch_and_process_order_plans(search_ymd: str):
 
     # 1) 총건수 1회 조회
     first = http_get_json(api_url(ORDER_PLAN_LIST_PATH), {
-        "ServiceKey": config.NARA_SERVICE_KEY, "type": "json",
+        "ServiceKey": _cfg("NARA_SERVICE_KEY"), "type": "json",
         "pageNo": "1", "numOfRows": "1",
         "inqryDiv": "1", "inqryBgnDt": f"{search_ymd}0000", "inqryEndDt": f"{search_ymd}2359"
     })
@@ -2896,7 +2937,7 @@ def fetch_and_process_order_plans(search_ymd: str):
 
     # 2) 페이지 병렬 요청
     params_list = [{
-        "ServiceKey": config.NARA_SERVICE_KEY, "type": "json",
+        "ServiceKey": _cfg("NARA_SERVICE_KEY"), "type": "json",
         "pageNo": str(p), "numOfRows": str(page_size),
         "inqryDiv": "1", "inqryBgnDt": f"{search_ymd}0000", "inqryEndDt": f"{search_ymd}2359"
     } for p in range(1, total_pages + 1)]
@@ -2938,7 +2979,7 @@ def fetch_and_process_bid_notices(search_ymd: str):
     page, page_size, total_pages = 1, 100, 1
     while page <= total_pages:
         params = {
-            "ServiceKey": config.NARA_SERVICE_KEY, "type": "json",
+            "ServiceKey": _cfg("NARA_SERVICE_KEY"), "type": "json",
             "pageNo": str(page), "numOfRows": str(page_size),
             "bidNtceBgnDt": f"{search_ymd}0000", "bidNtceEndDt": f"{search_ymd}2359"
         }
@@ -3014,7 +3055,7 @@ def fetch_and_process_contracts(search_ymd: str):
 
     # 1) 총건수 1회 조회
     first = http_get_json(api_url(CNTRCT_LIST_PATH), {
-        "ServiceKey": config.NARA_SERVICE_KEY, "type": "json",
+        "ServiceKey": _cfg("NARA_SERVICE_KEY"), "type": "json",
         "pageNo": "1", "numOfRows": "1",
         "inqryDiv": "1", "inqryBgnDt": start_dt, "inqryEndDt": end_dt
     })
@@ -3030,7 +3071,7 @@ def fetch_and_process_contracts(search_ymd: str):
 
     # 2) 파라미터 묶음 생성 후 병렬 조회
     params_list = [{
-        "ServiceKey": config.NARA_SERVICE_KEY, "type": "json",
+        "ServiceKey": _cfg("NARA_SERVICE_KEY"), "type": "json",
         "pageNo": str(p), "numOfRows": str(page_size),
         "inqryDiv": "1", "inqryBgnDt": start_dt, "inqryEndDt": end_dt
     } for p in range(1, total_pages + 1)]
@@ -3092,7 +3133,7 @@ def fetch_and_process_contracts(search_ymd: str):
 def _fetch_dlvr_detail(req_no: str):
     DLVR_DETAIL_PATH = "/1230000/at/ShoppingMallPrdctInfoService/getDlvrReqDtlInfoList"
     detail_params = {
-        "ServiceKey": config.NARA_SERVICE_KEY, "type": "json",
+        "ServiceKey": _cfg("NARA_SERVICE_KEY"), "type": "json",
         "inqryDiv": "2", "dlvrReqNo": req_no, "numOfRows": "100", "pageNo": "1"
     }
     try:
@@ -3113,7 +3154,7 @@ def fetch_and_process_delivery_requests(search_ymd: str):
 
     # 1) 총건수 1회
     first = http_get_json(api_url(DLVR_LIST_PATH), {
-        "ServiceKey": config.NARA_SERVICE_KEY, "type": "json",
+        "ServiceKey": _cfg("NARA_SERVICE_KEY"), "type": "json",
         "pageNo": "1", "numOfRows": "1",
         "inqryDiv": "1", "inqryBgnDate": search_ymd, "inqryEndDate": search_ymd
     })
@@ -3129,7 +3170,7 @@ def fetch_and_process_delivery_requests(search_ymd: str):
 
     # 2) 페이지 병렬 (요약 목록)
     params_list = [{
-        "ServiceKey": config.NARA_SERVICE_KEY, "type": "json",
+        "ServiceKey": _cfg("NARA_SERVICE_KEY"), "type": "json",
         "pageNo": str(p), "numOfRows": str(page_size),
         "inqryDiv": "1", "inqryBgnDate": search_ymd, "inqryEndDate": search_ymd
     } for p in range(1, total_pages + 1)]
@@ -3338,6 +3379,9 @@ def fetch_data_for_stage(search_date: str, stage_config: dict):
     else:
         raise ValueError(f"Invalid stage_config: 'func' not found or not callable for {stage_config.get('name')}")
 
+def get_db_session():
+    SessionLocal = sessionmaker(bind=engine)
+    return SessionLocal()
 
 
 def recheck_all_certifications():
