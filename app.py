@@ -249,7 +249,18 @@ def login_screen():
             )
 
         with col2:
-            st.text_input("도메인", value="@kepco.co.kr", disabled=True)
+            # -----------------------------------------------------------------
+            # 🔥 수정된 부분: st.text_input(disabled=True) 대신 HTML로 볼드 처리
+            # -----------------------------------------------------------------
+            st.markdown(
+                """
+                <div style="height: 38px; display: flex; align-items: center; padding-top: 0.5rem;">
+                    <strong>@kepco.co.kr</strong>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
+            # -----------------------------------------------------------------
 
         if email_id:
             email_input = f"{email_id}@kepco.co.kr"
@@ -2620,7 +2631,7 @@ def save_rows_by_office_to_db(df_editor) -> None:
         session.rollback()
 
 
-        
+
     all_office_list = [o for o in OFFICES if o != "전체"]
     st.markdown("---")
 
