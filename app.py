@@ -284,7 +284,7 @@ def login_screen():
         if "code_timestamp" not in st.session_state:
             st.session_state["code_timestamp"] = datetime.now()
             
-        time_limit = timedelta(minutes=3) # 3분 제한
+        time_limit = timedelta(minutes=5) # 5분 제한
         elapsed = datetime.now() - st.session_state["code_timestamp"]
         remaining_seconds = max(0, time_limit.total_seconds() - elapsed.total_seconds())
 
@@ -2505,17 +2505,26 @@ def mail_send_page():
         with st.spinner("메일 발송 중..."):
             for office, data in mpd.items():
                 try:
+                    # 💡 수정된 부분: mailer.py의 send_mail 함수가 
+                    # SMTP 설정값들을 인수로 받도록 변경되었다고 가정하고 추가합니다.
                     send_mail(
                         to_list=[r["email"] for r in data["to_list"]],
                         subject=data["subject"],
                         html_body=data["html_body"],
                         attach_name=data["attach_name"],
                         attach_html=data["attach_html"],
+                        # ---------------------------------------------
+                        # 🔥 추가된 인수
+                        mail_from=MAIL_FROM, 
+                        smtp_host=MAIL_SMTP_HOST, 
+                        smtp_port=MAIL_SMTP_PORT, 
+                        mail_user=MAIL_USER, 
+                        mail_pass=MAIL_PASS,
+                        # ---------------------------------------------
                     )
                     sent.append(office)
                 except Exception as e:
                     failed[office] = str(e)
-
         st.session_state["_do_final_send"] = False
         st.session_state.pop("mail_preview_data", None)
 
@@ -2613,6 +2622,21 @@ def mail_manage_page():
                 }
             )
     df_edit = pd.DataFrame(df_rows)
+
+    # 🌟 [수정]: df_edit가 비어있을 경우, 컬럼 구조를 명시적으로 정의
+    if df_edit.empty:
+        df_edit = pd.DataFrame(
+            {
+                "선택": [],
+                "사업소명": [],
+                "담당자명": [],
+                "이메일 ID": [],
+                "도메인": [],
+            }
+        )
+# 🌟 [수정 끝]
+
+
 
     st.info(
         "테이블을 직접 편집, 행 추가/삭제 후 '저장' 버튼을 눌러주세요. (도메인 기본값: kepco.co.kr)"
