@@ -7,8 +7,16 @@ from typing import List, Dict, Tuple
 from datetime import date, datetime, timedelta
 from collections import defaultdict
 from email.mime.application import MIMEApplication # <--- 이 줄이 필요합니다
+try:
+    import config as _local_config
+except:
+    _local_config = None
 
-import config
+def _cfg(key, default=None):
+    if _local_config and hasattr(_local_config, key):
+        return getattr(_local_config, key)
+    return st.secrets.get(key, default)
+
 # mailer.py 상단
 from email.header import Header
 from email.message import EmailMessage
@@ -187,15 +195,30 @@ def build_body_html(office: str, period: Tuple[date, date], items_period: List[D
     return body, attach_name, attach_html, preview
 
 
-def send_mail(to_list: List[str], subject: str, html_body: str,
-              attach_name: str, attach_html: str):
+# mailer.py 파일 수정 (기존 config import는 제거하거나 주석 처리)
+# import config  <-- 이 줄은 제거하거나 주석 처리합니다.
+# ...
 
+def send_mail(
+    to_list: List[str], 
+    subject: str, 
+    html_body: str,
+    attach_name: str, 
+    attach_html: str,
+    # === 새로 추가된 인수 (Streamlit secrets에서 로드된 값) ===
+    mail_from: str, 
+    smtp_host: str, 
+    smtp_port: int, 
+    mail_user: str, 
+    mail_pass: str
+    # ========================================================
+):
 
     msg = EmailMessage()
 
     # 제목/발신자/수신자
     msg["Subject"] = subject
-    msg["From"] = config.MAIL_FROM
+    msg["From"] = mail_from # <--- config.MAIL_FROM 대신 인수로 받은 mail_from 사용
     msg["To"] = ", ".join(to_list)
 
     # HTML 본문
@@ -216,15 +239,15 @@ def send_mail(to_list: List[str], subject: str, html_body: str,
 
     try:
         with smtplib.SMTP(
-            config.MAIL_SMTP_HOST,
-            config.MAIL_SMTP_PORT,
+            smtp_host, # <--- config.MAIL_SMTP_HOST 대신 인수로 받은 smtp_host 사용
+            smtp_port, # <--- config.MAIL_SMTP_PORT 대신 인수로 받은 smtp_port 사용
             timeout=30
         ) as server:
 
             server.ehlo()
             server.starttls(context=context)
             server.ehlo()
-            server.login(config.MAIL_USER, config.MAIL_PASS)
+            server.login(mail_user, mail_pass) # <--- config.MAIL_USER, config.MAIL_PASS 대신 인수로 받은 값 사용
             server.send_message(msg)
 
         print(f"메일 발송 성공 → {subject}")
