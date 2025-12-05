@@ -349,26 +349,22 @@ def login_screen():
                 
                 # 코드 일치 여부 확인
                 elif code_input == st.session_state["generated_code"]:
-                    expire_date = datetime.now() + timedelta(days=180)
-                    
-                    # 1) 쿠키 설정 (장기 유지용)
-                    # [여기에 쿠키 설정 로직이 들어갈 예정일 수 있습니다.]
 
-                    # -------------------------------------------------------------
-                    # 🔥 새로 추가된 부분
-                    st.session_state["logged_in"] = True
-                    st.session_state["page"] = "Home"
-                    st.rerun()
-                    # -------------------------------------------------------------
-                    
-                    # 2) Streamlit Toast 알림
-                    st.toast("👋 로그인 성공! 환영합니다.", icon="✅")
-                    # 2) [핵심] 세션 상태 강제 설정 (즉시 접속용)
-                    # 쿠키가 아직 안 구워져도 일단 통과시킴
+                    # 🔥 로그인 성공 처리 (단 하나만 사용)
                     st.session_state["logged_in_success"] = True
-                    
-                    st.success("인증 성공! 시스템에 접속합니다...")
-                    time.sleep(0.5)
+                    st.session_state["target_email"] = st.session_state["target_email"]
+
+                    # 선택: 쿠키 저장 (기억하기 기능)
+                    expire_date = datetime.now() + timedelta(days=180)
+                    cookie_manager = st.session_state.get("cookie_manager_instance")
+                    if cookie_manager:
+                        cookie_manager.set(
+                            "eers_auth_token",
+                            st.session_state["target_email"],
+                            expires_at=expire_date
+                        )
+
+                    st.toast("👋 로그인 성공! 환영합니다.", icon="✅")
                     st.rerun()
                 else:
                     st.error("❌ 인증코드가 일치하지 않습니다.")
