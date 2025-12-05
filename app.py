@@ -212,6 +212,7 @@ def login_screen():
     if not cookie_manager:
         # Fallback/Error state if initialization in eers_app failed (shouldn't happen)
         return False
+        
     # 1. 쿠키 확인 (재접속 시 6개월 유지용)
     auth_cookie = cookie_manager.get(cookie="eers_auth_token")
     
@@ -225,7 +226,8 @@ def login_screen():
             st.session_state["logged_in_success"] = True
             st.session_state["target_email"] = auth_cookie # 쿠키에서 이메일 정보 복원
         
-        return True
+        # 🔥 이 시점에서 메인 앱으로 즉시 진입하도록 리턴
+        return True # <--- 이 부분은 그대로 두세요.
 
     st.title("🔒 EERS 시스템 로그인")
 
@@ -264,11 +266,16 @@ def login_screen():
                 code = "".join(random.choices(string.digits, k=6))
                 print(f"\n======== [DEBUG] 생성된 인증코드: {code} ========\n")
 
+                # 🔥 여기에 타임스탬프를 먼저 저장합니다. (현재 코드와 동일)
+                st.session_state["generated_code"] = code
+                st.session_state["target_email"] = full_email
+                st.session_state["code_timestamp"] = datetime.now() # <--- 이 줄이 핵심입니다.
+                
                 with st.spinner("인증코드를 발송 중입니다..."):
                     if send_verification_email(full_email, code):
-                        st.session_state["generated_code"] = code
-                        st.session_state["target_email"] = full_email
-                        st.session_state["code_timestamp"] = datetime.now()
+                        # st.session_state["generated_code"] = code # <--- 이 줄은 위로 이동
+                        # st.session_state["target_email"] = full_email # <--- 이 줄은 위로 이동
+                        # st.session_state["code_timestamp"] = datetime.now() # <--- 이 줄은 위로 이동
                         st.session_state["auth_stage"] = "verify_code"
                         st.toast(f"📧 {full_email} 로 인증코드를 보냈습니다!", icon="✅")
                         st.rerun()
