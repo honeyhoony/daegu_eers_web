@@ -1,13 +1,13 @@
+pg8000==1.31.2
+SQLAlchemy>=2.0
 streamlit
 streamlit-aggrid
 pandas
 numpy
 requests
-SQLAlchemy>=2.0
-typing-extensions
 lxml
 openpyxl
 certifi
 urllib3
-psycopg2-binary==2.9.9
-
+typing-extensions
+extra-streamlit-components
