@@ -87,20 +87,56 @@ SIX_MONTHS = timedelta(days=30 * 6)
 # =========================================================
 # 0. 로컬 모듈 및 설정 로드 (PyQt 잔재 및 gui_app 제거)
 # =========================================================
+# 🛑 DB 연결에 필요한 모든 변수를 초기화합니다.
+engine = None
+SessionLocal = None
+# Note, MailRecipient, MailHistory 클래스는 아래 try 블록에서 가져오거나 더미로 대체됩니다.
+
 try:
-    from database import SessionLocal, Notice, MailRecipient, MailHistory, engine, Base
+    # database.py에서 필요한 모듈과 함수를 임포트합니다.
+    from database import (
+        get_engine_and_session, # 👈 추가된 함수
+        Notice, 
+        MailRecipient, 
+        MailHistory, 
+        Base, 
+        engine as db_module_engine, # database.py의 초기 None 엔진
+        SessionLocal as db_module_session_local # database.py의 초기 None 세션
+    )
+    # collect_data, mailer 임포트는 유지합니다.
     from collect_data import (
         fetch_data_for_stage, STAGES_CONFIG, is_relevant_text,
         resolve_address_from_bjd, fetch_kapt_basic_info, fetch_kapt_maintenance_history,
         _as_text, _to_int as _to_int_collect, _extract_school_name, _assign_office_by_school_name
     )
     from mailer import send_mail, build_subject, build_body_html, build_attachment_html
+
+    # 🚨 DB 초기화 섹션 🚨
+    # SUPABASE_DATABASE_URL이 있을 경우에만 실제 엔진/세션을 생성하고 전역 변수를 덮어씁니다.
+    if SUPABASE_DATABASE_URL:
+        logger.info("Connecting to Supabase PostgreSQL...")
+        # get_engine_and_session 함수를 사용하여 실제 연결 생성
+        _engine, _SessionLocal = get_engine_and_session(SUPABASE_DATABASE_URL)
+        
+        # 전역 변수를 실제 연결 객체로 덮어씁니다.
+        engine = _engine
+        SessionLocal = _SessionLocal
+        logger.info("Database connection successful and metadata loaded.")
+    else:
+         # 이 경우는 0. config/Secrets 섹션에서 이미 st.error를 띄웠습니다.
+        logger.warning("SUPABASE_DATABASE_URL not found. Running with dummy database logic.")
+
+
 except ImportError as e:
-    # 모듈이 없을 경우, Streamlit이 실행은 되도록 더미 정의 (실제 환경에서는 DB/Collector가 필요함)
-    # st.warning(f"경고: 필수 모듈 (database, collect_data, mailer) 로드 실패: {e}. 더미 함수로 대체됩니다.")
+    # 필수 모듈 로드 실패 시, Streamlit이 실행되도록 더미 정의를 유지합니다.
+    st.warning(f"경고: 필수 모듈 (database, collect_data, mailer) 로드 실패: {e}. 더미 함수로 대체됩니다.")
+    
+    # 🛑 Notice, MailRecipient, MailHistory 클래스를 이 블록 내에서 정의해야 합니다.
     class Notice: pass
     class MailRecipient: pass
     class MailHistory: pass
+    
+    # 더미 객체 정의
     engine = None
     class Base:
         @staticmethod
@@ -110,6 +146,8 @@ except ImportError as e:
                 def create_all(eng): pass
             return Meta()
     def SessionLocal(): return None
+    
+    # ... (collect_data, mailer 더미 함수 정의는 기존과 동일하게 유지)
     def fetch_data_for_stage(*args): pass
     STAGES_CONFIG = {"G2B": {"name": "G2B", "code": "g2b"}, "KAPT": {"name": "K-APT", "code": "kapt"}}
     def fetch_kapt_basic_info(code): return {}
@@ -119,7 +157,7 @@ except ImportError as e:
     def send_mail(**kwargs): return True
     def build_subject(*args): return "테스트 제목"
     def build_body_html(*args): return "<html><body>테스트 본문</body></html>", "첨부.html", "첨부 내용", "미리보기"
-    
+
 
 # =========================================================
 # 0-A. 대체 유틸리티
@@ -2332,32 +2370,24 @@ def data_sync_page():
         
         st.session_state["is_updating"] = True
 
-        # 콘솔 출력을 Streamlit으로 리다이렉션하는 로직 (기존 코드 유지)
-        class StreamlitLogger:
-            def __init__(self, log_placeholder, log_messages):
-                self.log_placeholder = log_placeholder
-                self.log_messages = log_messages
 
-            def write(self, msg):
-                if msg.strip():
-                    if len(self.log_messages) > 100: self.log_messages.pop(0)
-                    self.log_messages.append(msg.replace("\n", "<br>"))
-                    self.log_placeholder.markdown("<br>".join(self.log_messages), unsafe_allow_html=True)
-            def flush(self): pass
 
         st.subheader("📊 데이터 수집 진행률")
         progress_bar = st.progress(0)
         status_text = st.empty()
-        log_messages = []
-        log_placeholder = st.container().empty()
 
-        old_stdout = sys.stdout
-        sys.stdout = StreamlitLogger(log_placeholder, log_messages)
+        # 💡 로그 메시지를 Streamlit UI에 표시할 컨테이너 (st.info 사용)
+        log_placeholder = st.container()
+
+
 
         dates = [start_date + timedelta(days=x) for x in range((end_date - start_date).days + 1)]
         stages_to_run = list(STAGES_CONFIG.values())
         total_steps = len(dates) * len(stages_to_run)
         current_step = 0
+
+        # 로그 메시지 저장용 리스트
+        sync_logs = []
 
         try:
             for d in dates:
@@ -2365,22 +2395,28 @@ def data_sync_page():
                 for stage in stages_to_run:
                     name = stage.get("name", "Unknown Stage")
                     status_text.markdown(f"**현재:** `{disp_date} / {name}`")
-                    
+
                     try:
                         fetch_data_for_stage(d.strftime("%Y%m%d"), stage)
-                        log_messages.append(f"✔ [{disp_date}] {name} 완료")
+                        sync_logs.append(f"✔ [{disp_date}] {name} 완료")
                     except Exception as e:
-                        log_messages.append(f"❌ [{disp_date}] {name} 오류 : {e}")
-                        print(f"[{disp_date}] {name} 오류 상세: {e}")
+                        error_msg = f"❌ [{disp_date}] {name} 오류 : {e}"
+                        sync_logs.append(error_msg)
+                        logger.error(error_msg) # 💡 콘솔 로그에 오류 기록
 
                     current_step += 1
                     pct = int(current_step / total_steps * 100)
                     progress_bar.progress(pct / 100)
                     status_text.markdown(f"**진행률:** {pct}% ({current_step}/{total_steps})")
-                    log_placeholder.markdown("<br>".join(log_messages), unsafe_allow_html=True)
 
-            status_text.success("🎉 전체 작업 완료!")
+                    # 로그 업데이트: 매 단계마다 컨테이너를 비우고 다시 씁니다.
+                    with log_placeholder:
+                        st.info("\n".join(sync_logs))
+
+            status_text.success("🎉 전체 작업 완료!") #
+
             progress_bar.progress(1.0)
+        
             _set_last_sync_datetime_to_meta(datetime.now())
             load_data_from_db.clear()
             _get_new_item_counts_by_source_and_office.clear()
@@ -2390,8 +2426,8 @@ def data_sync_page():
 
         except Exception as global_e:
             status_text.error(f"⚠️ 동기화 작업 중 치명적인 오류 발생: {global_e}")
+            logger.error(f"Global Sync Error: {global_e}", exc_info=True) # 추가 로깅
         finally:
-            sys.stdout = old_stdout
             st.session_state["is_updating"] = False
 
 
