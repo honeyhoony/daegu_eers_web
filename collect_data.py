@@ -8,10 +8,9 @@ from functools import lru_cache
 import re
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
+from sqlalchemy.dialects.postgresql import insert as pg_insert # <--- 함수 맨 위(import 영역)에 추가
 from database import Base, Notice, engine  # noqa
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 import re, time
 from typing import Optional, Dict, Any
@@ -259,8 +258,9 @@ def bulk_upsert_notices(notices):
     
     session.begin()
     try:
-        stmt = sqlite_insert(Notice).values(notices)
-        
+        from sqlalchemy.dialects.postgresql import insert # collect_data.py 상단에 추가
+
+        stmt = insert(Notice).values(notices)
         # 사용자가 직접 관리하는 is_favorite, status, memo는 업데이트에서 제외
         update_cols = {
             col.name: col
@@ -269,6 +269,7 @@ def bulk_upsert_notices(notices):
         }
 
         stmt = stmt.on_conflict_do_update(
+            # Notice 모델의 __table_args__에 정의된 UniqueConstraint 이름과 일치해야 함
             index_elements=["source_system", "detail_link", "model_name", "assigned_office"],
             set_=update_cols
         )
