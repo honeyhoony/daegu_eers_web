@@ -41,6 +41,17 @@ def _cfg(name, default=None):
         return st.secrets[name]
     except Exception:
         return default
+    
+DATABASE_URL = _cfg("DATABASE_URL", "")    
+
+
+
+# Supabase PostgreSQL URL
+SUPABASE_DATABASE_URL = _cfg("SUPABASE_DATABASE_URL", "")
+if not SUPABASE_DATABASE_URL:
+    st.error("FATAL: SUPABASE_DATABASE_URL이 secrets/config에 설정되지 않았습니다.")
+    # DB 세션이 필요한 함수는 이 시점부터 작동 불가
+
 
 # 메일 관련 설정
 MAIL_FROM       = _cfg("MAIL_FROM", "")
@@ -237,16 +248,16 @@ def _to_int_local(val):
         return 0
 
 # DB PRAGMA 설정 (SQLite) - 실제 DB 모듈이 있다면 활성화
-if engine:
+if engine and "sqlite" in str(engine.url): # <--- PostgreSQL을 위해 조건 변경 또는 삭제
     @event.listens_for(engine, "connect")
     def _set_sqlite_pragma(dbapi_conn, connection_record):
+        # ... (PRAGMA 설정 코드 삭제 또는 주석 처리)
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL;")
         cursor.execute("PRAGMA synchronous=NORMAL;")
         cursor.execute("PRAGMA busy_timeout=5000;")
         cursor.execute("PRAGMA foreign_keys=ON;")
         cursor.close()
-
 # =========================================================
 # 로그인 & 인증 관련 함수 (수정)
 # =========================================================
@@ -587,13 +598,12 @@ def init_session_state():
     st.session_state.setdefault("show_login_form", False) 
     st.session_state.setdefault("auth_stage", "input_email") # 인증 단계 초기화
 
-@st.cache_resource
+
 def get_db_session():
-    if engine and not inspect(engine).has_table("notices"):
-        Base.metadata.create_all(engine)
-    if SessionLocal:
-        return SessionLocal()
-    return None # 더미 반환
+    # PostgreSQL은 create_all을 여러번 호출해도 문제 없음
+    Base.metadata.create_all(engine)
+    return SessionLocal()
+
 
 
 # 신규 건수 집계
