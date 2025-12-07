@@ -2639,7 +2639,7 @@ def eers_app():
         # 💡 [수정] 로그인 성공 시 auth_stage 초기화
         st.session_state["auth_stage"] = "complete"
 
-    start_auto_update_scheduler()
+    #start_auto_update_scheduler()
 
     # [사이드바 구성]
     with st.sidebar:
