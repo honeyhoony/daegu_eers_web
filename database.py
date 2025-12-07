@@ -81,20 +81,23 @@ class MailHistory(Base):
 
 
 def get_engine_and_session(db_url: str):
-    """Supabase DB URL을 받아 엔진과 세션을 생성합니다."""
-
     if not db_url:
-        raise ValueError("DB URL is not set.")
-
-    # Streamlit Cloud 환경에서는 psycopg2 사용 불가 → 반드시 pg8000 사용
+         raise ValueError("DB URL is not set.")
+    
+    # 1. URL에서 쿼리 파라미터(? 뒤의 문자열) 제거 (pgbouncer=true 제거 목적)
+    if '?' in db_url:
+        db_url = db_url.split('?', 1)[0]
+    
+    # 2. psycopg2 호환성을 위해 postgresql:// 를 postgresql+pg8000:// 로 변환
     if db_url.startswith("postgresql://"):
-        db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
+         db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1) # 💡 pg8000 스키마로 변환
 
-    # 엔진 생성
     engine = create_engine(
         db_url,
         pool_pre_ping=True,
         echo=False,
+        # 3. SSL 모드는 pg8000에 connect_args로 명시적으로 전달해야 오류를 줄일 수 있습니다.
+        connect_args={'sslmode': 'require'} 
     )
 
     # 테이블 자동 생성
