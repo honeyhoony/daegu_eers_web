@@ -22,6 +22,14 @@ import extra_streamlit_components as stx
 import pandas as pd
 from pandas.tseries.offsets import BusinessDay
 import ssl
+import threading
+from datetime import datetime
+import time
+# 표준 Python 로깅 모듈 사용
+import logging 
+# 로거 설정 (Streamlit Cloud의 Console Logs에 기록됩니다)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # =======================================
 # 0. config/Secrets 안전 로딩 (Cloud 대응)
@@ -535,6 +543,7 @@ def render_auth_ui():
 # =========================================================
 # 자동 업데이트 스케줄러 (백그라운드 스레드)
 # =========================================================
+
 @st.cache_resource
 def start_auto_update_scheduler():
     def scheduler_loop():
@@ -545,7 +554,9 @@ def start_auto_update_scheduler():
             if now.hour in [8, 12, 19]:
                 if now.minute == 0 and now.hour != last_run_hour:
                     try:
-                        print(f"[Auto-Sync] {now} - 자동 업데이트 시작")
+                        # 💥 변경: print 대신 logger.info 사용
+                        logger.info(f"[Auto-Sync] {now} - 자동 업데이트 시작")
+                        
                         target_date_str = now.strftime("%Y%m%d")
                         
                         for stage in STAGES_CONFIG.values():
@@ -557,17 +568,20 @@ def start_auto_update_scheduler():
                         _get_new_item_counts_by_source_and_office.clear()
                         load_data_from_db.clear()
                         
-                        print(f"[Auto-Sync] {now} - 자동 업데이트 완료")
+                        # 💥 변경: print 대신 logger.info 사용
+                        logger.info(f"[Auto-Sync] {now} - 자동 업데이트 완료")
                         last_run_hour = now.hour
                         
                     except Exception as e:
-                        print(f"[Auto-Sync] 오류 발생: {e}")
+                        # 💥 변경: print 대신 logger.error 사용
+                        logger.error(f"[Auto-Sync] 오류 발생: {e}")
             
             time.sleep(30)
 
     t = threading.Thread(target=scheduler_loop, daemon=True)
     t.start()
-    print(">>> 자동 업데이트 스케줄러 스레드가 시작되었습니다.")
+    logger.info(">>> 자동 업데이트 스케줄러 스레드가 시작되었습니다.") # 💥 변경
+
 
 
 # =========================================================
