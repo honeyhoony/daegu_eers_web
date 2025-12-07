@@ -1,17 +1,14 @@
-# database.py — Supabase PostgreSQL 전용 최종버전
-
 from __future__ import annotations
 from datetime import datetime
 from contextlib import contextmanager
 import os
-
+# URL 인코딩을 위해 quote_plus를 추가합니다.
 from sqlalchemy import (
     create_engine, Column, Integer, String, Boolean, UniqueConstraint,
     DateTime, text
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.exc import OperationalError
-
 
 # ─────────────────────────────────────────
 # 1) Base 선언
@@ -83,54 +80,36 @@ class MailHistory(Base):
     preview_html = Column(String, default="")
 
 
-# ─────────────────────────────────────────
-# 3) Supabase PostgreSQL 엔진 생성
-# ─────────────────────────────────────────
-
-SUPABASE_URL = "db.stmdejospftgrippzdft.supabase.co"
-SUPABASE_USER = "postgres"
-SUPABASE_PASSWORD = "eers123456##$@" 
-SUPABASE_DB = "postgres"
-
-DATABASE_URL = (
-    f"postgresql+psycopg2://{SUPABASE_USER}:{SUPABASE_PASSWORD}"
-    f"@{SUPABASE_URL}:5432/{SUPABASE_DB}"
-)
-
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    echo=False,
-)
-
 def get_engine_and_session(db_url: str):
-    if not db_url:
-         raise ValueError("DB URL is not set.")
-    # psycopg2 호환성을 위해 postgresql:// 를 postgresql+psycopg2:// 로 변환
-    if db_url.startswith("postgresql://"):
-         db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    """Supabase DB URL을 받아 엔진과 세션을 생성합니다."""
 
+    if not db_url:
+        raise ValueError("DB URL is not set.")
+
+    # Streamlit Cloud 환경에서는 psycopg2 사용 불가 → 반드시 pg8000 사용
+    if db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
+
+    # 엔진 생성
     engine = create_engine(
         db_url,
         pool_pre_ping=True,
         echo=False,
     )
-    # ... (SessionLocal 반환)
-    return engine, sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
+    # 테이블 자동 생성
+    Base.metadata.create_all(engine)
+
+    # 세션 팩토리 생성
+    SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+    return engine, SessionLocal
 
 # ─────────────────────────────────────────
-# 4) 세션 팩토리
+# 4) 초기 엔진/세션 선언 (초기에는 None으로 선언)
 # ─────────────────────────────────────────
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-
-
-# ─────────────────────────────────────────
-# 5) 테이블 자동 생성
-# ─────────────────────────────────────────
-# PostgreSQL은 여러 번 실행해도 문제 없음.
-Base.metadata.create_all(engine)
-
+engine = None
+SessionLocal = None
 
 # ─────────────────────────────────────────
 # 6) DB 세션 컨텍스트 관리
