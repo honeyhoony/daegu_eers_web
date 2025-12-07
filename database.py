@@ -80,32 +80,43 @@ class MailHistory(Base):
     preview_html = Column(String, default="")
 
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+import urllib.parse 
+
+Base = declarative_base()
+
 def get_engine_and_session(db_url: str):
     if not db_url:
          raise ValueError("DB URL is not set.")
     
-    # 1. URL에서 쿼리 파라미터(? 뒤의 문자열) 제거 (pgbouncer=true 제거 목적)
-    if '?' in db_url:
-        db_url = db_url.split('?', 1)[0]
+    # 1. URL 파싱 및 쿼리 파라미터 제거 (pgbouncer=true 제거)
+    # SQLAlchemy의 create_engine에 그대로 전달하면 pg8000에서 TypeError를 유발할 수 있습니다.
+    parsed_url = urllib.parse.urlparse(db_url)
     
-    # 2. psycopg2 호환성을 위해 postgresql:// 를 postgresql+pg8000:// 로 변환
-    if db_url.startswith("postgresql://"):
-         db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1) # 💡 pg8000 스키마로 변환
-
-    engine = create_engine(
-        db_url,
-        pool_pre_ping=True,
-        echo=False,
-        # 3. SSL 모드는 pg8000에 connect_args로 명시적으로 전달해야 오류를 줄일 수 있습니다.
-        connect_args={'sslmode': 'require'} 
+    # Pooler URL의 기본 형식 (postgresql://...)을 가져옵니다.
+    # netloc에 [YOUR-PASSWORD]가 포함되어 있으므로 그대로 사용합니다.
+    clean_db_url = urllib.parse.urlunparse(
+        parsed_url._replace(query='', scheme='postgresql+pg8000') # scheme을 pg8000으로 강제 변경
     )
 
-    # 테이블 자동 생성
-    Base.metadata.create_all(engine)
-
-    # 세션 팩토리 생성
-    SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-
+    # 2. pg8000 드라이버는 'sslmode'를 직접 connect_args로 받아야 합니다.
+    engine = create_engine(
+        clean_db_url,
+        pool_pre_ping=True,
+        echo=False,
+        connect_args={
+            # Supabase는 SSL을 'require' 또는 'prefer'로 설정해야 합니다.
+            'sslmode': 'require'
+        } 
+    )
+    
+    # 3. 데이터베이스에 연결하여 테이블 생성 시도
+    # 오류가 발생하는 지점이므로, 이 연결이 성공해야 합니다.
+    Base.metadata.create_all(engine) # <-- 오류 추적 지점
+    
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     return engine, SessionLocal
 
 # ─────────────────────────────────────────
